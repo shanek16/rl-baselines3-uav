@@ -1,6 +1,6 @@
 import os
 import numpy as np
-import rendering
+from . import rendering
 
 from gym import Env
 from gym.spaces import Box, Dict, Discrete, MultiBinary, MultiDiscrete

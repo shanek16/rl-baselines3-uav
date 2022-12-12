@@ -43,6 +43,10 @@ try:
 except ImportError:
     rocket_lander_gym = None
 
+try:
+    import rand_cycle  # pytype: disable=import-error
+except ImportError:
+    rand_cycle = None
 
 # Register no vel envs
 def create_no_vel_env(env_id: str):

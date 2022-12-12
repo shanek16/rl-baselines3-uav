@@ -18,6 +18,7 @@ runs
 hub
 *.mp4
 *.json
+rand_frames*
 
 # Setuptools distribution and build folders.
 /dist/

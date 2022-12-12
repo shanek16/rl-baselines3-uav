@@ -43,6 +43,13 @@ try:
 except ImportError:
     rocket_lander_gym = None
 
+# Custom env
+from .rand_cycle import Rand_cycle
+
+register(
+     id='Rand_cycle-v0',
+     entry_point='rl_zoo3:Rand_cycle'
+)
 
 # Register no vel envs
 def create_no_vel_env(env_id: str):

@@ -48,7 +48,7 @@ from .rand_cycle import Rand_cycle
 
 register(
      id='Rand_cycle-v0',
-     entry_point='rl_zoo3:Rand_cycle'
+     entry_point=Rand_cycle #'rl_zoo3:Rand_cycle'
 )
 
 # Register no vel envs

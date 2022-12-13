@@ -5,7 +5,7 @@ from . import rendering
 from gym import Env
 from gym.spaces import Box, Dict, Discrete, MultiBinary, MultiDiscrete
 from gym.utils import seeding
-from mdp import Actions, States
+from .mdp import Actions, States
 from numpy import arctan2, array, cos, pi, sin
 from PIL import Image, ImageDraw, ImageFont
 
@@ -82,6 +82,7 @@ class Rand_cycle(Env):
         self.target3_state = None
         self.battery = array([3000, 3000])  # 3rounds*1200steps/round
         self.charge_station_occupancy = None
+        self.surveillance = None
         # for debugging
         self.uav1_in_charge_station = 0
         self.uav2_in_charge_station = 0
@@ -93,7 +94,7 @@ class Rand_cycle(Env):
         self.seed()
         self.max_step = max_step
         self.viewer = None
-        self.SAVE_FRAMES_PATH = "rand_frames/"
+        self.SAVE_FRAMES_PATH = "rand_frames_01/"
         self.episode_counter = 0
         self.frame_counter = 0
         self.save_frames = False
@@ -102,9 +103,8 @@ class Rand_cycle(Env):
         self.n_r = 800
         self.n_alpha = 360
         self.n_u = 21
-
-        self.distance_keeping_result00 = np.load("80_dkc_result_0.0.npz")
-        self.time_optimal_result00 = np.load("80_toc_result_0.0.npz")
+        self.distance_keeping_result00 = np.load("./rl_zoo3/80_dkc_result_0.0.npz")
+        self.time_optimal_result00 = np.load("./rl_zoo3/80_toc_result_0.0.npz")
 
         self.distance_keeping_straightened_policy00 = self.distance_keeping_result00[
             "policy"
@@ -114,7 +114,7 @@ class Rand_cycle(Env):
         self.states = States(
             np.linspace(0.0, 80.0, self.n_r, dtype=np.float32),
             np.linspace(
-                 + np.pi / self.n_alpha,
+                -np.pi + np.pi / self.n_alpha,
                 np.pi - np.pi / self.n_alpha,
                 self.n_alpha,
                 dtype=np.float32,
@@ -207,6 +207,7 @@ class Rand_cycle(Env):
         self.uav1docked_time = 0
         self.uav2docked_time = 0
         self.charge_station_occupancy = 0
+        self.surveillance = array([0,0,0])
         return self.observation
 
     def uav1kinematics(self, action):
@@ -331,10 +332,15 @@ class Rand_cycle(Env):
             w2_action = self.dkc_get_action(self.rel_observation(uav=2, target=3))
             self.uav2kinematics(w2_action)
         self.charge_station_occupancy = max(self.uav1_in_charge_station, self.uav2_in_charge_station)
+        self.surveillance = self.cal_surveillance()
         self.battery = array([battery1, battery2])
         # print('battery: ', self.battery)
 
-        reward = (2 * L1(self.surveillance) - self.n) / self.n  # -1~1
+        # reward = (2 * L1(self.surveillance) - self.n) / self.n  # -1~1
+        if self.charge_station_occupancy > 0:
+            reward = -1
+        reward = -2
+        reward = reward + 3*L1(self.surveillance)/self.n # -2~1
         if self.step_count > self.max_step:
             terminal = True
             # print("terminal True: over max_step")
@@ -355,17 +361,23 @@ class Rand_cycle(Env):
             text_1 = "uav1_in_charge_station: {}".format(self.uav1_in_charge_station)
             text0 = "uav2_in_charge_station: {}".format(self.uav2_in_charge_station)
             text1 = "charge station occupancy: {}".format(self.charge_station_occupancy)
-            text2 = "uav1docked_time: {}".format(self.uav1docked_time)
-            text3 = "uav2docked_time: {}".format(self.uav2docked_time)
-            text4 = "uav1 action: {}".format(self.num2str[action[0]])
-            text5 = "uav2 action: {}".format(self.num2str[action[1]])
+            text2 = "surveillance : {}".format(self.surveillance)
+            text3 = "uav1docked_time: {}".format(self.uav1docked_time)
+            text4 = "uav2docked_time: {}".format(self.uav2docked_time)
+            text5 = "uav1 action: {}".format(self.num2str[action[0]])
+            text6 = "uav2 action: {}".format(self.num2str[action[1]])
+            text7 = "uav1 battery: {}".format(self.battery[0])
+            text8 = "uav2 battery: {}".format(self.battery[1])
             draw.text((0, 0), text_1, color=(200, 200, 200), font=self.font)
             draw.text((0, 20), text0, color=(200, 200, 200), font=self.font)
             draw.text((0, 40), text1, color=(200, 200, 200), font=self.font)
             draw.text((0, 60), text2, color=(200, 200, 200), font=self.font)
             draw.text((0, 80), text3, color=(200, 200, 200), font=self.font)
-            draw.text((0, 100), text4, color=(255, 255, 0), font=self.font)
-            draw.text((0, 120), text5, color=(255, 255, 255), font=self.font)
+            draw.text((0, 100), text4, color=(200, 200, 200), font=self.font)
+            draw.text((0, 120), text5, color=(255, 255, 0), font=self.font)
+            draw.text((0, 140), text6, color=(255, 255, 255), font=self.font)
+            draw.text((770, 0), text7, color=(255, 255, 255), font=self.font)
+            draw.text((770, 20), text8, color=(255, 255, 255), font=self.font)
             image.save(path)
             self.frame_counter += 1
         self.step_count += 1
@@ -383,7 +395,10 @@ class Rand_cycle(Env):
         outer_donut = self.viewer.draw_circle(
             radius=self.d + self.l, x=target1_x, y=target1_y, filled=True
         )
-        outer_donut.set_color(0.3, 0.3, 0.9, 0.3)  # transparent blue
+        if self.surveillance[0] == 1:
+            outer_donut.set_color(0.6, 0.6, 1.0, 0.3) # lighter
+        else:
+            outer_donut.set_color(0.3, 0.3, 0.9, 0.3)  # transparent blue
         inner_donut = self.viewer.draw_circle(
             radius=self.d - self.l, x=target1_x, y=target1_y, filled=True
         )
@@ -410,7 +425,10 @@ class Rand_cycle(Env):
         outer_donut = self.viewer.draw_circle(
             radius=self.d + self.l, x=target2_x, y=target2_y, filled=True
         )
-        outer_donut.set_color(0.3, 0.3, 0.9, 0.3)  # transparent blue
+        if self.surveillance[1] == 1:
+            outer_donut.set_color(0.6, 0.6, 1.0, 0.3) # lighter
+        else:
+            outer_donut.set_color(0.3, 0.3, 0.9, 0.3)  # transparent blue
         inner_donut = self.viewer.draw_circle(
             radius=self.d - self.l, x=target2_x, y=target2_y, filled=True
         )
@@ -436,7 +454,10 @@ class Rand_cycle(Env):
         outer_donut = self.viewer.draw_circle(
             radius=self.d + self.l, x=target3_x, y=target3_y, filled=True
         )
-        outer_donut.set_color(0.3, 0.3, 0.9, 0.3)  # transparent blue
+        if self.surveillance[2] == 1:
+            outer_donut.set_color(0.6, 0.6, 1.0, 0.3) # lighter
+        else:
+            outer_donut.set_color(0.3, 0.3, 0.9, 0.3)  # transparent blue
         inner_donut = self.viewer.draw_circle(
             radius=self.d - self.l, x=target3_x, y=target3_y, filled=True
         )
@@ -541,21 +562,18 @@ class Rand_cycle(Env):
         alpha = wrap(arctan2(y, x) - wrap(beta) - pi)
         return array([r, alpha])
 
-    @property
-    def surveillance(self):
+    def cal_surveillance(self):
         # is any uav surveilling target 1?
         if (
             (
                 self.d - self.l < self.rel_observation(uav=1, target=1)[0]
                 and self.rel_observation(uav=1, target=1)[0] < self.d + self.l
+                and self.uav1_in_charge_station == 0
             )
             or (
                 self.d - self.l < self.rel_observation(uav=2, target=1)[0]
                 and self.rel_observation(uav=2, target=1)[0] < self.d + self.l
-            )
-            or (
-                self.d - self.l < self.rel_observation(uav=3, target=1)[0]
-                and self.rel_observation(uav=3, target=1)[0] < self.d + self.l
+                and self.uav2_in_charge_station == 0
             )
         ):
             s1 = 1
@@ -566,14 +584,12 @@ class Rand_cycle(Env):
             (
                 self.d - self.l < self.rel_observation(uav=1, target=2)[0]
                 and self.rel_observation(uav=1, target=2)[0] < self.d + self.l
+                and self.uav1_in_charge_station == 0
             )
             or (
                 self.d - self.l < self.rel_observation(uav=2, target=2)[0]
                 and self.rel_observation(uav=2, target=2)[0] < self.d + self.l
-            )
-            or (
-                self.d - self.l < self.rel_observation(uav=3, target=2)[0]
-                and self.rel_observation(uav=3, target=2)[0] < self.d + self.l
+                and self.uav2_in_charge_station == 0
             )
         ):
             s2 = 1
@@ -584,14 +600,12 @@ class Rand_cycle(Env):
             (
                 self.d - self.l < self.rel_observation(uav=1, target=3)[0]
                 and self.rel_observation(uav=1, target=3)[0] < self.d + self.l
+                and self.uav1_in_charge_station == 0
             )
             or (
                 self.d - self.l < self.rel_observation(uav=2, target=3)[0]
                 and self.rel_observation(uav=2, target=3)[0] < self.d + self.l
-            )
-            or (
-                self.d - self.l < self.rel_observation(uav=3, target=3)[0]
-                and self.rel_observation(uav=3, target=3)[0] < self.d + self.l
+                and self.uav2_in_charge_station == 0
             )
         ):
             s3 = 1
@@ -612,38 +626,6 @@ class Rand_cycle(Env):
             "charge_station_occupancy": self.charge_station_occupancy,
         }
         return dictionary_obs
-
-# manual normalization
-'''    @property
-    def observation(self):
-        # normalization
-        observation1 = self.observation1 # r, alpha, beta
-        observation1[0] = (observation1[0]-20)/20 # r
-        observation1[1:] = (observation1[1])/np.pi # alpha
-        observation2 = self.observation2 # r, alpha, beta
-        observation2[0] = (observation2[0]-20)/20 # r
-        observation2[1:] = (observation2[1])/np.pi # alpha
-        target1_obs = self.target1_obs
-        target1_obs[0] = (self.target1_obs[0]-20)/20 # r
-        target1_obs[1] = (self.target1_obs[1])/np.pi # beta
-        target2_obs = self.target2_obs
-        target2_obs[0] = (self.target2_obs[0]-20)/20 # r
-        target2_obs[1] = (self.target2_obs[1])/np.pi # beta
-        target3_obs = self.target3_obs
-        target3_obs[0] = (self.target3_obs[0]-20)/20 # r
-        target3_obs[1] = (self.target3_obs[1])/np.pi # beta
-        battery = (self.battery - 1500)/1500
-        dictionary_obs = {
-            "uav1_state": observation1,
-            "uav2_state": observation2,
-            "target1_position": target1_obs,
-            "target2_position": target2_obs,
-            "target3_position": target3_obs,
-            "battery": battery,
-            "surveillance": self.surveillance,
-            "charge_station_occupancy": self.charge_station_occupancy,
-        }
-        return dictionary_obs'''
 
 def wrap(theta):
     if theta > pi:
